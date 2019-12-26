@@ -6,7 +6,8 @@ from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
-import json, itertools, re, requests, random
+import json, itertools, re, requests, random, datetime
+from datetime import datetime as dt
 from fake_useragent import UserAgent
 
 options = Options()
@@ -122,7 +123,6 @@ for each in var_names:
 
 
 photos_per_page = "500"
-page = "1"
 additional_extras = "url_o,original_format,date_taken,date_upload,geo"
 
 privacy_filter ={
@@ -134,17 +134,16 @@ privacy_filter ={
 }
 
 
-min_upload_date = ''
-max_upload_date = ''
 
-
+global params
 params = {
     "sort" : "relevance",
+    "tags" : 'clouds',
     "parse_tags" : "1",
     "content_type" : "7",
     "extras" : extras + additional_extras,
     "per_page" : photos_per_page,
-    "page" : page,
+    "page" : 1,
     "lang": "en-US",
     "has_geo" :"1",
     "media" : "photos",
@@ -159,8 +158,6 @@ params = {
     "hermesClient" : "1",
     "reqId" : reqId,
     "nojsoncallback" : "1",
-    "min_upload_date" : min_upload_date,
-    "max_upload_date" : max_upload_date,
     "privacy_filter" : privacy_filter['public photos'],
     "geo_context": '2'
 }
@@ -175,9 +172,78 @@ with requests.sessions.Session() as s:
     #s.headers['User-Agent'] = str(ua.chrome)
     response = s.get(api_url, params=params)
 
+json_data_path = './json_data/'
+photo_json = 'photos.json'
+scraped_ids = 'scraped_photos.txt'
+now = dt.now()
+days_offset = 3
 
-images = response.json()['photos']['photo']
+def change_date_range(index, offset=3):
+    params['min_upload_date'] = index - datetime.timedelta(days=offset)
+    params['max_upload_date'] = index
 
+change_date_range(now)
 
-print(images)
+params['tags'] = ''
 
+total_photos = s.get(api_url, params=params).json()['photos']['total']
+
+def find_best_date_range(total_photos, days_offset):
+
+    print(f"Finding a better range (in 20 attempts or less) ...")
+    repeats = 0
+    #int(total_photos) <= 3990 or int(total_photos) > 4000
+    while (int(total_photos) != 4000) and not (int(total_photos) < 4000 and repeats > 20):
+        if int(total_photos) > 4000:
+            days_offset = days_offset * 4000/ int(total_photos)
+            params['min_upload_date'] = params['max_upload_date'] - datetime.timedelta(days_offset)
+            print(f"({str(repeats)}): too many photos   ({total_photos.ljust(10, '+')}): new range from {params['min_upload_date']} to {params['max_upload_date']}", end = '\r')
+        if int(total_photos) <= 3990:
+            days_offset = days_offset * 3990 / int(total_photos)
+            params['min_upload_date'] = params['max_upload_date'] - datetime.timedelta(days_offset)
+            print(f"({str(repeats)}): not enough photos ({total_photos.ljust(10, '-')}): new range from {params['min_upload_date']} to {params['max_upload_date']}", end = '\r')
+
+        params['per_page'] = 1
+        total_photos = s.get(api_url, params=params).json()['photos']['total']
+        repeats += 1
+
+for term in TAGS:
+
+    params['text'] = term
+
+    first_range = True
+    while params['min_upload_date'].timestamp() >= 1483228800 :
+        if not first_range:
+            change_date_range(params['max_upload_date'] - datetime.timedelta(days=days_offset), days_offset)
+        else:
+            first_range = False
+        print("__________________________")
+        print(f"New date range: {params['min_upload_date']} to {params['max_upload_date']}______ total photos : {total_photos}")
+
+        total_photos = s.get(api_url, params=params).json()['photos']['total']
+        print(f"Photos in current range: {total_photos}")
+
+        find_best_date_range(total_photos, days_offset)
+        total_photos = s.get(api_url, params=params).json()['photos']['total']
+
+        print(f'starting json dump... (photos per request: {total_photos})'.ljust(200, ' '))
+
+        for page in range(1, 9):
+            print(f"getting page {page}...", end = ' ')
+            print('sleeping', end = '\r')
+            time.sleep(random.randrange(500, 1500)/ 1000)
+
+            params['page'] = page
+            params['per_page'] = photos_per_page
+
+            response = s.get(api_url, params=params)
+            path = f"{json_data_path}{term}_{str(params['min_upload_date'].timestamp())}-{str(params['max_upload_date'].timestamp())}_{page}.json"
+            try:
+                with open(path, 'w') as outfile:
+                    json.dump(response.json(), outfile)
+                print(f"{path} written succesfully!")
+            except Exception as e:
+                print(f"problem dumping json data: {str(e)}")
+        time.sleep(random.randrange(1000, 2500)/ 1000)
+
+    time.sleep(random.randrange(4000, 7000)/ 1000)

@@ -14,8 +14,8 @@ parser = argparse.ArgumentParser(description=textwrap.dedent('''\
         scrape JSONs containing photos from flickr
          '''))
 
-parser.add_argument("-a", "--after_date", help="Start date (in unix timestamp format). Defaults to yesterday", type=float, default=int(dt.now().timestamp()) - (24 * 3600))
-parser.add_argument("-b", "--before_date", help="End date (in unix timestamp format). Defaults to now", type=float, default=int(dt.now().timestamp()))
+parser.add_argument("-a", "--after_date", help="Start date (in unix timestamp format). Defaults to yesterday", type=float, default=dt.now().timestamp() - (24 * 3600))
+parser.add_argument("-b", "--before_date", help="End date (in unix timestamp format). Defaults to now", type=float, default=dt.now().timestamp())
 parser.add_argument("-s", "--courtesy_sleep", help="Range (in string format) from which a random value will be chosen to sleep randomly. example: '1.3, 2.7'", type=str, default="1.3, 2.7")
 parser.add_argument("-n", "--photos_per_page", help="Photos per file. Default is 500 which is the maximum", type=int, default=500)
 parser.add_argument("-v", "--verbose", help="increase output verbosity", action="count", default=0)
@@ -38,10 +38,18 @@ args = parser.parse_args()
 
 for each in args.__dict__: globals()[each.upper()] = args.__dict__[each]
 
-COURTESY_SLEEP = [int(COURTESY_SLEEP.split(',')[0]) , int(COURTESY_SLEEP.split(',')[1])]
 
-DATA_PATH = ('./test/' if TEST else DATA_PATH)
+# making sure the dates are in datetime format
+for each in ["AFTER_DATE", "BEFORE_DATE"]:
+    if type(each) != type(dt.now()):
+        globals()[each] = dt.fromtimestamp(globals()[each])
 
+# printing parameters for easy debugging
+if VERBOSE >=3:
+    print("".ljust(80, "_") + "\nscript parameters")
+    for each in args.__dict__:
+        print(f"{each.upper()}: {args.__dict__[each]}")
+    print("".ljust(80, "_"))
 
 # VERBOSE = 3
 
@@ -55,6 +63,9 @@ DATA_PATH = ('./test/' if TEST else DATA_PATH)
 
 # ADD_EXTRAS = "url_o,original_format,date_taken,date_upload,geo"
 
+COURTESY_SLEEP = [float(COURTESY_SLEEP.split(',')[0]) , float(COURTESY_SLEEP.split(',')[1])]
+
+DATA_PATH = ('./test/' if TEST else DUMP_PATH)
 
 params = {
     "sort" : "relevance",
@@ -242,7 +253,6 @@ def find_best_date_range():
 
     if VERBOSE >=3: print(f"Finding a better range (in 20 attempts or less) ...")
     repeats = 0
-    #int(total_photos) <= 3990 or int(total_photos) > 4000
     while (int(total_photos) != 4000) and not (int(total_photos) < 4000 and repeats > 20):
         if int(total_photos) > 4000:
             days_offset = days_offset * 4000/ int(total_photos)
@@ -282,10 +292,11 @@ def write_each_page_as_json_file(path, params, session, max_pages):
                 json.dump(response.json(), outfile)
                 #print('\r', end = '')
             print(f"{file_to_be_written} written succesfully!")
+            time.sleep(0.2)
         except Exception as e:
             print(f"problem dumping json data: {str(e)}")
-        if VERBOSE >=2: print(f'sleeping for {last_response_time * random.randint(COURTESY_SLEEP[0], COURTESY_SLEEP[1])} seconds... (for courtesy :))'.ljust(120, ' '), end = '\r')
-        time.sleep(last_response_time * random.randint(COURTESY_SLEEP[0], COURTESY_SLEEP[1]))
+        if VERBOSE >=2: print(f'sleeping for {last_response_time * random.uniform(COURTESY_SLEEP[0], COURTESY_SLEEP[1])} seconds... (for courtesy :P )'.ljust(120, ' '), end = '\r')
+        time.sleep(last_response_time * random.uniform(COURTESY_SLEEP[0], COURTESY_SLEEP[1]))
 
 
 last_response_time = 0

@@ -165,6 +165,7 @@ params = {
 cookies = driver.get_cookies()
 
 #ua = UserAgent()
+driver.close()
 
 with requests.sessions.Session() as s:
     for cookie in cookies:
@@ -188,7 +189,9 @@ params['tags'] = ''
 
 total_photos = s.get(api_url, params=params).json()['photos']['total']
 
-def find_best_date_range(total_photos, days_offset):
+def find_best_date_range():
+
+    global days_offset, total_photos
 
     print(f"Finding a better range (in 20 attempts or less) ...")
     repeats = 0
@@ -196,12 +199,11 @@ def find_best_date_range(total_photos, days_offset):
     while (int(total_photos) != 4000) and not (int(total_photos) < 4000 and repeats > 20):
         if int(total_photos) > 4000:
             days_offset = days_offset * 4000/ int(total_photos)
-            params['min_upload_date'] = params['max_upload_date'] - datetime.timedelta(days_offset)
             print(f"({str(repeats)}): too many photos   ({total_photos.ljust(10, '+')}): new range from {params['min_upload_date']} to {params['max_upload_date']}", end = '\r')
         if int(total_photos) <= 3990:
             days_offset = days_offset * 3990 / int(total_photos)
-            params['min_upload_date'] = params['max_upload_date'] - datetime.timedelta(days_offset)
             print(f"({str(repeats)}): not enough photos ({total_photos.ljust(10, '-')}): new range from {params['min_upload_date']} to {params['max_upload_date']}", end = '\r')
+        params['min_upload_date'] = params['max_upload_date'] - datetime.timedelta(days_offset)
 
         params['per_page'] = 1
         total_photos = s.get(api_url, params=params).json()['photos']['total']
@@ -217,26 +219,35 @@ for term in TAGS:
             change_date_range(params['max_upload_date'] - datetime.timedelta(days=days_offset), days_offset)
         else:
             first_range = False
+        total_photos = s.get(api_url, params=params).json()['photos']['total']
         print("__________________________")
         print(f"New date range: {params['min_upload_date']} to {params['max_upload_date']}______ total photos : {total_photos}")
 
         total_photos = s.get(api_url, params=params).json()['photos']['total']
         print(f"Photos in current range: {total_photos}")
 
-        find_best_date_range(total_photos, days_offset)
+        find_best_date_range()
         total_photos = s.get(api_url, params=params).json()['photos']['total']
+        print(f"Better range: {params['min_upload_date']} to {params['max_upload_date']}______ total photos : {total_photos}".ljust(200, ' '))
 
-        print(f'starting json dump... (photos per request: {total_photos})'.ljust(200, ' '))
+        print(f'starting JSON dump...')
 
         for page in range(1, 9):
             print(f"getting page {page}...", end = ' ')
-            print('sleeping', end = '\r')
-            time.sleep(random.randrange(500, 1500)/ 1000)
 
             params['page'] = page
             params['per_page'] = photos_per_page
 
+            before = dt.now().timestamp()
+
             response = s.get(api_url, params=params)
+
+            after = dt.now().timestamp()
+
+            response_time = after - before
+            print(f'sleeping {response_time * random.randint(2, 6)} seconds... (for courtesy :))', end = '\r')
+            time.sleep(response_time * random.randint(0, 3))
+
             path = f"{json_data_path}{term}_{str(params['min_upload_date'].timestamp())}-{str(params['max_upload_date'].timestamp())}_{page}.json"
             try:
                 with open(path, 'w') as outfile:

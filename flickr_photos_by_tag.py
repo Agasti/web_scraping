@@ -25,19 +25,8 @@ parser.add_argument("-x", "--add_extras", help="extra json fields to request. De
 
 args = parser.parse_args()
 
-# verbose = args.verbose
-# test = args.test
-# AFTER_DATE = args.after_date
-# BEFORE_DATE = args.before_date
-# PHOTOS_PER_PAGE = args.photos_per_page
-# additional_extras = args.add_extras
-# DATA_PATH = args.dump_path
-
-# print(args)
-
-
+# creating global valiables from cmdline args for easy typing
 for each in args.__dict__: globals()[each.upper()] = args.__dict__[each]
-
 
 # making sure the dates are in datetime format
 for each in ["AFTER_DATE", "BEFORE_DATE"]:
@@ -213,7 +202,7 @@ if VERBOSE >= 2:
 
 added_params = {
     "extras" : extras + ADD_EXTRAS,
-    "per_page" : PHOTOS_PER_PAGE,
+    "per_page" : 1,
     "api_key" : api_key,
     "reqId" : reqId
 }
@@ -228,20 +217,13 @@ with requests.sessions.Session() as s:
     for cookie in cookies:
         s.cookies.set(cookie['name'], cookie['value'])
     if spoof_webdriver: s.headers['User-Agent'] = str(ua.chrome)
-response = s.get(api_url, params=params)
 
-
-
-now = BEFORE_DATE
 days_offset = 3
 
-def change_date_range(index, offset=3):
+def update_date_range(index, offset=3):
+    ''' shifts the date range by offset days (default is 3 days) '''
     params['min_upload_date'] = index - datetime.timedelta(days=offset)
     params['max_upload_date'] = index
-
-change_date_range(now)
-
-
 
 total_photos = s.get(api_url, params=params).json()['photos']['total']
 
@@ -272,7 +254,7 @@ def write_each_page_as_json_file(path, params, session, max_pages):
         print(f"Requesting page {page}...".ljust(120, ' '),  end='\r')
 
         params['page'] = page
-
+        params['per_page'] = PHOTOS_PER_PAGE
 
         before = dt.now().timestamp()
         try:
@@ -290,8 +272,10 @@ def write_each_page_as_json_file(path, params, session, max_pages):
         try:
             with open(file_to_be_written, 'w') as outfile:
                 json.dump(response.json(), outfile)
-                #print('\r', end = '')
-            print(f"{file_to_be_written} written succesfully!")
+
+            time_it_took = ''
+            if VERBOSE >=3: time_it_took = round(last_response_time, 2)
+            print(f"{file_to_be_written} written succesfully! took {time_it_took} s")
             time.sleep(0.2)
         except Exception as e:
             print(f"problem dumping json data: {str(e)}")
@@ -307,18 +291,19 @@ for term in TAGS:
     first_range = True
     response = s.get(api_url, params=params)
 
-    while params['min_upload_date'].timestamp() >= 1483228800 :
-        if not first_range:
-            change_date_range(params['max_upload_date'] - datetime.timedelta(days=days_offset), days_offset)
-            total_photos = response.json()['photos']['total']
-        else:
-            first_range = False
-            total_photos = s.get(api_url, params=params).json()['photos']['total']
-        print("".ljust(120, '_'))
-        if VERBOSE >=3: print(f"New date range: {params['min_upload_date']} to {params['max_upload_date']}")
+    params['min_upload_date'] = BEFORE_DATE - datetime.timedelta(days=days_offset)
+    # looping_over_date_range(path=DATA_PATH, params=params, session=s, start=params['min_upload_date'], stop=params['max_upload_date'])
+    while params['min_upload_date'].timestamp() >= 1483228800:
+        if VERBOSE >= 3: print("".ljust(120, '_'))
+        # if not first_range:
+            # update_date_range(params['max_upload_date'] - datetime.timedelta(days=days_offset), days_offset)
+        # else:
+            # first_range = False
+
+        update_date_range(BEFORE_DATE)
 
         total_photos = s.get(api_url, params=params).json()['photos']['total']
-        if VERBOSE >=3: print(f"Photos in current range: {total_photos}")
+        if VERBOSE >=3: print(f"New date range: {params['min_upload_date']} to {params['max_upload_date']}______ total photos: {total_photos}")
 
         find_best_date_range()
 

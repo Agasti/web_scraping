@@ -13,6 +13,16 @@ from fake_useragent import UserAgent
 
 global driver, params, AFTER_DATE ,BEFORE_DATE ,COURTESY_SLEEP ,PHOTOS_PER_PAGE ,VERBOSE ,TEST ,DUMP_PATH ,ADD_EXTRAS, HEADLESS
 
+AFTER_DATE = dt.fromtimestamp(1570579058.0)
+BEFORE_DATE = dt.fromtimestamp(1577592826.384834)
+PHOTOS_PER_PAGE =  500
+VERBOSE =  4
+DUMP_PATH = './'
+TEST = True
+ADD_EXTRAS = ' url_o,original_format,date_taken,date_upload,geo'
+HEADLESS = True
+COURTESY_SLEEP = [0, 0.000000001]
+
 
 parser = argparse.ArgumentParser(description=textwrap.dedent('''\
         scrape JSONs containing photos from flickr
@@ -52,10 +62,49 @@ if VERBOSE >=3:
         print(f"{each.upper()}: {args.__dict__[each]}")
     print("".ljust(120, "_"))
 
+
 COURTESY_SLEEP = [float(COURTESY_SLEEP.split(',')[0]) , float(COURTESY_SLEEP.split(',')[1])]
 if TEST and VERBOSE > 3: COURTESY_SLEEP = [0, 0.000000001]
 
 
+DATA_PATH = ('./test/' if TEST else DUMP_PATH)
+
+params = {
+    "sort" : "relevance",
+    "parse_tags" : "1",
+    "content_type" : "7",
+    "lang": "en-US",
+    "has_geo" :"1",
+    "media" : "photos",
+    "view_all" : "1",
+    "text" : "clouds",
+    "viewerNSID": "",
+    "method" : "flickr.photos.search",
+    "csrf" : "",
+    "format" : "json",
+    "hermes" : "1",
+    "hermesClient" : "1",
+    "nojsoncallback" : "1",
+    "geo_context": '2', # 0: all , 1: indoors, 2 : outdoors
+    "privacy_filter" : 1
+}
+
+privacy_filters = '''
+"public photos" : '1',
+"private photos visible to friends" : '2',
+"private photos visible to family" : '3',
+"private photos visible to friends & family": '4',
+"completely private photos" : '5'
+'''
+
+FLICKR = 'https://flickr.com/search/'
+TAGS = ['clouds', 'cloud', 'sky', 'storm', 'weather', 'rain cloud']
+
+var_names = ["api_key", "reqId", "api_url", "extras"]
+re_expressions = [r"(api_key)=([\dabcdef]*)(&)", r"(reqId)=([\dabcdef]*)(&)", r"(https:\/\/(\w+\.?)+(\/\w+)+)(\?)", r"extras=((\w+(%2)?)+?)?&"]
+groups = [2,2,1,1]
+
+variables = [dict(zip(["var_name", "regex", 'group'], each)) for each in [each for each in zip(var_names, re_expressions, groups)]]
 
 def parse_api_call(call_string):
     ''' parsing data from DOM element '''
@@ -92,11 +141,12 @@ def looping_over_date_range(path, params, session, start, stop, offset):
         total_photos = s.get(api_url, params=params_lcl).json()['photos']['total']
         if VERBOSE >=3: print(f"New date range: {params_lcl['min_upload_date']} to {params_lcl['max_upload_date']}______ total photos: {total_photos}")
 
-        returned_values = find_best_date_range(session=s, params=params_lcl, start=params_lcl['min_upload_date'], stop=params_lcl['max_upload_date'], total_photos=total_photos, offset=offset)
-
-        params_lcl['min_upload_date'] = returned_values['new_start']
-        next_batch_size = returned_values['total_photos']
-        offset = returned_values['offset']
+        params_lcl['min_upload_date'], next_batch_size, offset = find_best_date_range(session=s
+                                               ,params=params_lcl
+                                               , start=params_lcl['min_upload_date']
+                                               , stop=params_lcl['max_upload_date']
+                                               , total_photos=total_photos
+                                               , offset=offset)
 
         if VERBOSE >= 2: print(f"Next suitable range: {params_lcl['min_upload_date']} to {params_lcl['max_upload_date']}______ total photos : {next_batch_size}".ljust(120, ' '))
 
@@ -148,7 +198,7 @@ def find_best_date_range(session, params, start, stop, total_photos, offset):
 
         repeats += 1
         # if VERBOSE >3 and TEST: time.sleep(1)
-    return {'new_start': start, 'total_photos': total_photos, 'offset': offset}
+    return start, total_photos, offset
 
 def write_each_page_as_json_file(path, call_params, session):
 
@@ -189,52 +239,8 @@ def write_each_page_as_json_file(path, call_params, session):
         time.sleep(last_response_time * random.uniform(COURTESY_SLEEP[0], COURTESY_SLEEP[1]))
     print("")
 
-
-
-
-
-
-if __name__ == '__main__':
-
-
-    DATA_PATH = ('./test/' if TEST else DUMP_PATH)
-
-    params = {
-        "sort" : "relevance",
-        "parse_tags" : "1",
-        "content_type" : "7",
-        "lang": "en-US",
-        "has_geo" :"1",
-        "media" : "photos",
-        "view_all" : "1",
-        "text" : "clouds",
-        "viewerNSID": "",
-        "method" : "flickr.photos.search",
-        "csrf" : "",
-        "format" : "json",
-        "hermes" : "1",
-        "hermesClient" : "1",
-        "nojsoncallback" : "1",
-        "geo_context": '2', # 0: all , 1: indoors, 2 : outdoors
-        "privacy_filter" : 1
-    }
-
-    privacy_filters = '''
-    "public photos" : '1',
-    "private photos visible to friends" : '2',
-    "private photos visible to family" : '3',
-    "private photos visible to friends & family": '4',
-    "completely private photos" : '5'
-    '''
-
-    FLICKR = 'https://flickr.com/search/'
-    TAGS = ['clouds', 'cloud', 'sky', 'storm', 'weather', 'rain cloud']
-
-    var_names = ["api_key", "reqId", "api_url", "extras"]
-    re_expressions = [r"(api_key)=([\dabcdef]*)(&)", r"(reqId)=([\dabcdef]*)(&)", r"(https:\/\/(\w+\.?)+(\/\w+)+)(\?)", r"extras=((\w+(%2)?)+?)?&"]
-    groups = [2,2,1,1]
-
-    variables = [dict(zip(["var_name", "regex", 'group'], each)) for each in [each for each in zip(var_names, re_expressions, groups)]]
+def get_api_call_string():
+    ''' use selenium to get the api_call string'''
 
     options = Options()
 
@@ -323,6 +329,14 @@ if __name__ == '__main__':
 
     cookies = driver.get_cookies()
     driver.close()
+
+    return xhr_api_call, cookies
+
+if __name__ == '__main__':
+
+
+
+    xhr_api_call, cookies = get_api_call_string()
 
     parse_api_call(xhr_api_call)
 

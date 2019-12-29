@@ -11,8 +11,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from fake_useragent import UserAgent
 
-
-
+global driver, params, AFTER_DATE ,BEFORE_DATE ,COURTESY_SLEEP ,PHOTOS_PER_PAGE ,VERBOSE ,TEST ,DUMP_PATH ,ADD_EXTRAS, HEADLESS
 
 
 parser = argparse.ArgumentParser(description=textwrap.dedent('''\
@@ -31,7 +30,6 @@ parser.add_argument("-x", "--add_extras", help="extra json fields to request. De
 
 args = parser.parse_args()
 
-global driver, params, AFTER_DATE ,BEFORE_DATE ,COURTESY_SLEEP ,PHOTOS_PER_PAGE ,VERBOSE ,TEST ,DUMP_PATH ,ADD_EXTRAS, HEADLESS
 
 
 args.__dict__['HEADLESS'] = args.webdriver
@@ -111,16 +109,6 @@ def looping_over_date_range(path, params, session, start, stop, offset):
 
         time.sleep(0.2)
         time.sleep(last_response_time * random.uniform(COURTESY_SLEEP[0], COURTESY_SLEEP[1]) * 2)
-
-
-# def update_date_range(index, params, offset=3):
-    # ''' shifts the date range by offset days (default is 3 days) '''
-
-    # new_index = index - datetime.timedelta(days=offset)
-    # params['min_upload_date'] = new_index
-    # params['max_upload_date'] = index
-
-    # return index
 
 def find_best_date_range(session, params, start, stop, total_photos, offset):
 

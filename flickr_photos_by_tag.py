@@ -24,14 +24,15 @@ parser.add_argument("-b", "--before_date", help="End date (in unix timestamp for
 parser.add_argument("-s", "--courtesy_sleep", help="Range (in string format) from which a random value will be chosen to sleep randomly. example: '1.3, 2.7'", type=str, default="1.3, 2.7")
 parser.add_argument("-n", "--photos_per_page", help="Photos per file. Default is 500 which is the maximum", type=int, default=500)
 parser.add_argument("-v", "--verbose", help="increase output verbosity", action="count", default=0)
-parser.add_argument("-p", "--dump_path", help="Path where to dump json files", type=str, default='./json_data/')
+parser.add_argument("-p", "--dump_path", help="Path where to dump json files", type=str, default='./')
 parser.add_argument("-t", "--test", help="test mode", action='store_true')
 parser.add_argument("-w", "--webdriver", help="Turn off headless mode for on the chrome webdriver", action='store_false')
 parser.add_argument("-x", "--add_extras", help="extra json fields to request. Defaults to 'url_o,original_format,date_taken,date_upload,geo'", type=str, default="url_o,original_format,date_taken,date_upload,geo")
 
 args = parser.parse_args()
 
-global driver, params, AFTER_DATE ,BEFORE_DATE ,COURTESY_SLEEP ,PHOTOS_PER_PAGE ,VERBOSE ,TEST ,DUMP_PATH ,ADD_EXTRAS, HEADLESS, now
+global driver, params, AFTER_DATE ,BEFORE_DATE ,COURTESY_SLEEP ,PHOTOS_PER_PAGE ,VERBOSE ,TEST ,DUMP_PATH ,ADD_EXTRAS, HEADLESS
+
 
 args.__dict__['HEADLESS'] = args.webdriver
 
@@ -55,6 +56,9 @@ if VERBOSE >=3:
 
 COURTESY_SLEEP = [float(COURTESY_SLEEP.split(',')[0]) , float(COURTESY_SLEEP.split(',')[1])]
 if TEST and VERBOSE > 3: COURTESY_SLEEP = [0, 0.000000001]
+
+
+
 def parse_api_call(call_string):
     ''' parsing data from DOM element '''
     #creating variables for each parsed data
@@ -73,39 +77,28 @@ def parse_api_call(call_string):
 def looping_over_date_range(path, params, session, start, stop, offset):
     ''' loops over given date range'''
 
-    now = stop
-
     # copying request parameters to prepare to simultaneous execusion
     params_lcl = deepcopy(params)
 
     last_response_time = 0
 
+    # initializing time index
+    params_lcl['min_upload_date'] = stop
+
     while params_lcl['min_upload_date'].timestamp() >= start.timestamp():
         if VERBOSE >= 3: print("".ljust(20, '+'))
 
-        # update the date range and keep track of new now
-        # now = update_date_range(now, params=params_lcl)
-        # params_lcl['max_upload_date'] = params_lcl['min_upload_date']
-        # params_lcl['min_upload_date'] = params_lcl['min_upload_date'] - datetime.timedelta(days=offset)
-
-        params_lcl['max_upload_date'] = now
-        now =  now - datetime.timedelta(days=offset)
-        params_lcl['min_upload_date'] = now
+        params_lcl['max_upload_date'] = params_lcl['min_upload_date']
+        params_lcl['min_upload_date'] -= datetime.timedelta(days=offset)
 
         total_photos = s.get(api_url, params=params_lcl).json()['photos']['total']
         if VERBOSE >=3: print(f"New date range: {params_lcl['min_upload_date']} to {params_lcl['max_upload_date']}______ total photos: {total_photos}")
 
-        # calling find_best_date_range() to find best suitable star and stop
-        returned_values ={}
-        returned_values = find_best_date_range(session=s, params=params_lcl, total_photos=total_photos, offset=offset)
-        # print("deepcopy of params" , params_lcl['extras']); break
+        returned_values = find_best_date_range(session=s, params=params_lcl, start=params_lcl['min_upload_date'], stop=params_lcl['max_upload_date'], total_photos=total_photos, offset=offset)
 
-        params_lcl['min_upload_date'] = returned_values['start']
-        params_lcl['max_upload_date'] = returned_values['end']
+        params_lcl['min_upload_date'] = returned_values['new_start']
         next_batch_size = returned_values['total_photos']
         offset = returned_values['offset']
-
-        # response = s.get(api_url, params=params_lcl)
 
         if VERBOSE >= 2: print(f"Next suitable range: {params_lcl['min_upload_date']} to {params_lcl['max_upload_date']}______ total photos : {next_batch_size}".ljust(120, ' '))
 
@@ -129,15 +122,12 @@ def looping_over_date_range(path, params, session, start, stop, offset):
 
     # return index
 
-def find_best_date_range(session, params, total_photos, offset):
+def find_best_date_range(session, params, start, stop, total_photos, offset):
 
+    call_params = deepcopy(params)
     # creating local variables to avoid multiprocessing issues down the line
-
-    start = params['min_upload_date']
-    end =  params['max_upload_date']
-
-    params['per_page'] = 1
-    params['extras'] = ''
+    call_params['per_page'] = 1
+    call_params['extras'] = ''
 
     if VERBOSE >=3: print(f"Finding a better range (in 20 attempts or less) ...")
     repeats = 0
@@ -162,15 +152,15 @@ def find_best_date_range(session, params, total_photos, offset):
             # here the % will be big because we underestimated the range (plus a small nudge)
             offset = offset * 4000 / int(total_photos)
 
-        start = end - datetime.timedelta(offset)
+        start = stop - datetime.timedelta(offset)
 
         # shifting the date range
-        params['min_upload_date'] = start
-        total_photos = session.get(api_url, params=params).json()['photos']['total']
+        call_params['min_upload_date'] = start
+        total_photos = session.get(api_url, params=call_params).json()['photos']['total']
 
         repeats += 1
         # if VERBOSE >3 and TEST: time.sleep(1)
-    return {'start': start, 'end': end, 'total_photos': total_photos, 'offset': offset}
+    return {'new_start': start, 'total_photos': total_photos, 'offset': offset}
 
 def write_each_page_as_json_file(path, call_params, session):
 
@@ -371,7 +361,9 @@ if __name__ == '__main__':
     offset = 3
 
 
-    for term in TAGS:
+    TEST_RANGE = TAGS[:-2] if TEST and VERBOSE > 3 else TAGS
+
+    for term in TEST_RANGE:
 
         params['text'] = term
 
@@ -383,7 +375,6 @@ if __name__ == '__main__':
         params['min_upload_date'] = start
         params['max_upload_date'] = stop
 
-        # now = BEFORE_DATE
         looping_over_date_range(path=DATA_PATH, params=params, session=s, start=params['min_upload_date'], stop=params['max_upload_date'], offset = offset)
         if VERBOSE >=3:
             print("".ljust(120, "-"))
